@@ -214,4 +214,105 @@ class Dinosaurio(Entidad):
         # Default: moverse aleatorio
         self.mover_aleatorio()
 
+# Subclases ejemplo
+class Triceratops(Dinosaurio):
+    def __init__(self, x, y):
+        super().__init__("Triceratops", "herbivoro", vida=110, energia=100, x=x, y=y)
 
+class Stegosaurio(Dinosaurio):
+    def __init__(self, x, y):
+        super().__init__("Stegosaurio", "herbivoro", vida=105, energia=100, x=x, y=y)
+
+class Velociraptor(Dinosaurio):
+    def __init__(self, x, y):
+        super().__init__("Velociraptor", "carnivoro", vida=80, energia=100, x=x, y=y)
+
+    def tick_ia(self, ecosistema: 'Ecosistema'):
+        # Perseguir herbívoros más cercanos si existen, si no, aleatorio
+        objetivos = [a for a in ecosistema.animales if a.tipo in ("herbivoro",) and a.esta_vivo()]
+        if objetivos:
+            target = min(objetivos, key=lambda a: abs(a.x - self.x) + abs(a.y - self.y))
+            if target.x < self.x: self.mover_izquierda()
+            elif target.x > self.x: self.mover_derecha()
+            if target.y < self.y: self.mover_arriba()
+            elif target.y > self.y: self.mover_abajo()
+        else:
+            self.mover_aleatorio()
+
+class Dilofosaurio(Dinosaurio):
+    def __init__(self, x, y):
+        super().__init__("Dilofosaurio", "carnivoro", vida=95, energia=100, x=x, y=y)
+
+class Moshops(Dinosaurio):
+    def __init__(self, x, y):
+        super().__init__("Moshops", "omnivoro", vida=95, energia=100, x=x, y=y)
+
+class TRexJugador(Dinosaurio):
+    """T-Rex controlado por el jugador."""
+    def __init__(self, x, y):
+        super().__init__("T-Rex", "carnivoro", vida=160, energia=100, x=x, y=y)
+
+    # No IA: se mueve por entrada del usuario
+    def tick_ia(self, ecosistema: 'Ecosistema'):
+        pass
+
+    # No permite reproducción (para evitar múltiples T-Rex)
+    def reproducirse(self, ecosistema: 'Ecosistema'):
+        return None
+
+    # Inmortal: no envejece ni pierde recursos por tick
+    def envejecer(self):
+        # Mantener valores en rangos sanos
+        if self.vida <= 0:
+            self.vida = 160
+        if self.energia < 100:
+            self.energia = 100
+
+    # Inmortal: no gastar energía al mover
+    def mover_arriba(self):
+        if self.y > 0:
+            self.y = max(0, self.y - MOVE_SPEED)
+
+    def mover_abajo(self):
+        if self.y < WORLD_PX_H:
+            self.y = min(WORLD_PX_H, self.y + MOVE_SPEED)
+
+    def mover_izquierda(self):
+        if self.x > 0:
+            self.x = max(0, self.x - MOVE_SPEED)
+
+    def mover_derecha(self):
+        if self.x < WORLD_PX_W:
+            self.x = min(WORLD_PX_W, self.x + MOVE_SPEED)
+
+    # Ignorar muerte
+    def morir(self):
+        self.vida = 160
+        self.energia = max(self.energia, 70)
+
+class Ecosistema:
+    def __init__(self, width=WORLD_PX_W, height=WORLD_PX_H):
+        self.width = width
+        self.height = height
+        self.animales: List[Dinosaurio] = []
+        self.plantas: List[Planta] = []
+        self._rem_anim: List[Dinosaurio] = []
+        self._rem_pla: List[Planta] = []
+        self.jugador: TRexJugador | None = None
+        # Límites
+        self.max_animales = 32
+        self.limites_especie = {
+            'Triceratops': 8,
+            'Stegosaurio': 8,
+            'Velociraptor': 6,
+            'Dilofosaurio': 4,
+            'Moshops': 6,
+        }
+        # Mapeo especie -> clase
+        self.especie_clase = {
+            'Triceratops': Triceratops,
+            'Stegosaurio': Stegosaurio,
+            'Velociraptor': Velociraptor,
+            'Dilofosaurio': Dilofosaurio,
+            'Moshops': Moshops,
+        }
