@@ -56,4 +56,60 @@ class Entidad:
     def posicion(self) -> Tuple[int, int]:
         return (self.x, self.y)
 
+class PlantaBase:
+    def __init__(self, nombre: str, x: int, y: int, vida: int = 20, energia: int = 0):
+        self.nombre = nombre
+        self.vida = vida
+        self.energia = energia
+        self.x = x
+        self.y = y
+
+    def esta_viva(self) -> bool:
+        return self.vida > 0
+
+    def ser_comida(self):
+        self.vida = 0
+
+    def envejecer(self):
+        if self.vida <= 0:
+            return
+        if not hasattr(self, 'edad'):
+            self.edad = 0
+        if not hasattr(self, 'estado'):
+            self.estado = 'brote'
+        self.edad += 1
+        # Transiciones de estado por edad
+        # Tick ~40ms -> 1 min ~1500 ticks
+        if self.edad >= 1800:
+            self.estado = 'marchita'
+        elif self.edad >= 300:
+            self.estado = 'adulta'
+        # Desaparecer si está muy marchita
+        if self.edad >= 2400 and self.estado == 'marchita':
+            self.vida = 0
+
+    def intentar_sembrar(self, ecosistema: 'Ecosistema'):
+        """Generar una nueva planta cercana si es adulta y con baja probabilidad."""
+        if self.vida <= 0 o getattr(self, 'estado', 'brote') != 'adulta':
+            return
+        # Probabilidad baja de semilla, control de densidad (máximo 60)
+        if len(ecosistema.plantas) >= 60:
+            return
+        if random.random() < 0.02:  # 2% por tick
+            # Usar distribución dispersa global para mantener uniformidad
+            ecosistema.agregar_planta_dispersada(
+                nombre="Helecho",
+                attempts=50,
+                min_dist=55,
+                around=None,
+            )
+
+class Planta(PlantaBase):
+    def __init__(self, nombre: str, x: int, y: int, nutricion: int = ENERGY_PLANT_GAIN):
+        super().__init__(nombre, x=x, y=y, vida=20, energia=0)
+        self.nutricion = nutricion
+        self.edad = 0
+        # Estados: 'brote' -> 'adulta' -> 'marchita'
+        self.estado = 'brote'
+
         
