@@ -316,3 +316,54 @@ class Ecosistema:
             'Dilofosaurio': Dilofosaurio,
             'Moshops': Moshops,
         }
+
+    def contar_especie(self, nombre: str) -> int:
+        return sum(1 for a in self.animales if a.esta_vivo() and type(a).__name__ == nombre)
+
+    def puede_reproducir(self, progenitor: Dinosaurio) -> bool:
+        # Mantener único T-Rex
+        if isinstance(progenitor, TRexJugador):
+            return False
+        # Límite global
+        vivos = sum(1 for a in self.animales if a.esta_vivo())
+        if vivos >= self.max_animales:
+            return False
+        # Límite por especie
+        nombre = type(progenitor).__name__
+        lim = self.limites_especie.get(nombre, 6)
+        if self.contar_especie(nombre) >= lim:
+            return False
+        return True
+
+    def asegurar_minimos_especie(self, minimo: int = 2):
+        # Garantizar al menos 'minimo' individuos por especie (sin contar T-Rex)
+        for nombre, clase in self.especie_clase.items():
+            cnt = self.contar_especie(nombre)
+            faltan = max(0, minimo - cnt)
+            if faltan <= 0:
+                continue
+            # Respetar límites
+            lim = self.limites_especie.get(nombre, 6)
+            crear = min(faltan, max(0, lim - cnt))
+            if crear <= 0:
+                continue
+            # Checar capacidad global restante
+            vivos_tot = sum(1 for a in self.animales if a.esta_vivo())
+            disp = max(0, self.max_animales - vivos_tot)
+            if disp <= 0:
+                break
+            crear = min(crear, disp)
+            # Punto de referencia: uno existente de la especie o centro del mapa
+            ref = None
+            for a in self.animales:
+                if a.esta_vivo() and type(a).__name__ == nombre:
+                    ref = (a.x, a.y)
+                    break
+            rx, ry = (self.width//2, self.height//2) if ref is None else ref
+            for _ in range(crear):
+                nx = max(0, min(self.width, int(rx + random.randint(-40, 40))))
+                ny = max(0, min(self.height, int(ry + random.randint(-40, 40))))
+                try:
+                    self.agregar_animal(clase(nx, ny))
+                except Exception:
+                    pass
