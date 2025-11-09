@@ -875,3 +875,189 @@ def resolver_colisiones(eco: 'Ecosistema'):
                 a.y = max(0, min(WORLD_PX_H, a.y - ny * overlap))
                 b.x = max(0, min(WORLD_PX_W, b.x + nx * overlap))
                 b.y = max(0, min(WORLD_PX_H, b.y + ny * overlap))
+ef run_game():
+    pg.init()
+    screen = pg.display.set_mode((WINDOW_W, WINDOW_H))
+    pg.display.set_caption("Jurassic MVC - T-Rex Jugador (Pygame)")
+    clock = pg.time.Clock()
+    font = pg.font.SysFont("consolas", 16)
+    _load_sprites()
+
+    eco = Ecosistema()
+    eco.poblar_inicial()
+    # Spawns adicionales con separación inicial entre herbívoros y carnívoros
+    # Definir zonas: herbívoros a la izquierda, carnívoros a la derecha, buffer central
+    SEP_BUFFER = 80
+    LEFT_X_MIN, LEFT_X_MAX = 50, max(50, WORLD_PX_W // 2 - SEP_BUFFER)
+    RIGHT_X_MIN, RIGHT_X_MAX = min(WORLD_PX_W - 50, WORLD_PX_W // 2 + SEP_BUFFER), WORLD_PX_W - 50
+    Y_MIN, Y_MAX = 80, WORLD_PX_H - 50
+
+    # Herbívoros en manadas (lado izquierdo)
+    for _ in range(4):
+        eco.agregar_animal(Triceratops(
+            random.randint(LEFT_X_MIN, LEFT_X_MAX),
+            random.randint(Y_MIN, Y_MAX)
+        ))
+    for _ in range(3):
+        eco.agregar_animal(Stegosaurio(
+            random.randint(LEFT_X_MIN, LEFT_X_MAX),
+            random.randint(Y_MIN, Y_MAX)
+        ))
+
+    # Carnívoros (lado derecho)
+    for _ in range(2):
+        eco.agregar_animal(Velociraptor(
+            random.randint(RIGHT_X_MIN, RIGHT_X_MAX),
+            random.randint(Y_MIN, Y_MAX)
+        ))
+    eco.agregar_animal(Dilofosaurio(
+        random.randint(RIGHT_X_MIN, RIGHT_X_MAX),
+        random.randint(Y_MIN, Y_MAX)
+    ))
+
+    # Omnívoros: cerca del centro pero fuera del buffer exacto
+    MID_LEFT = max(50, WORLD_PX_W // 2 - SEP_BUFFER - 40)
+    MID_RIGHT = min(WORLD_PX_W - 50, WORLD_PX_W // 2 + SEP_BUFFER + 40)
+    omni_x = random.choice([
+        random.randint(LEFT_X_MIN, min(LEFT_X_MAX, MID_LEFT)),
+        random.randint(max(MID_RIGHT, RIGHT_X_MIN), RIGHT_X_MAX)
+    ])
+    eco.agregar_animal(Moshops(omni_x, random.randint(Y_MIN, Y_MAX)))
+
+    SIM_DT = 0.04  # 40 ms por paso lógico
+    sim_accum = 0.0
+    running = True
+    player_atk_cd = 0
+    while running:
+        dt = clock.tick(120) / 1000.0  # limitar a ~120 FPS
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                running = False
+            elif event.type == pg.KEYDOWN y event.key == pg.K_ESCAPE:
+                running = False
+
+        # Entrada (WASD + flechas, movimiento diagonal normalizado)
+        keys = pg.key.get_pressed()
+        trex = eco.jugador
+        if trex and trex.esta_vivo():
+            dx = dy = 0
+            if keys[pg.K_a] or keys[pg.K_LEFT]:
+                dx -= 1
+            if keys[pg.K_d] or keys[pg.K_RIGHT]:
+                dx += 1
+            if keys[pg.K_w] or keys[pg.K_UP]:
+                dy -= 1
+            if keys[pg.K_s] or keys[pg.K_DOWN]:
+                dy += 1
+            if dx != 0 or dy != 0:
+                if dx != 0 and dy != 0:
+                    step = int(MOVE_SPEED / 1.41421356) or 1
+                else:
+                    step = MOVE_SPEED
+                trex.x = max(0, min(WORLD_PX_W, trex.x + dx * step))
+                trex.y = max(0, min(WORLD_PX_H, trex.y + dy * step))
+                
+
+            # Comer cadáver cercano automáticamente (duración 10s)
+            for c in corpses:
+                if c['eaten'] >= 1.0:
+                    continue
+                if _dist(trex.x, MARGIN_TOP + trex.y, c['x'], c['y']) < 36:
+                    c['eaten'] += 1.0 / float(EAT_DURATION_TICKS)
+                    trex.energia = min(160, trex.energia + (40.0/float(EAT_DURATION_TICKS)))
+                    _spawn_eat_effect(c['x'], c['y'])
+                    if c['eaten'] >= 1.0:
+                        c['eaten'] = 1.0
+                        c['age'] = c['max_age']
+                    break
+
+            # Ataque del jugador con SPACE (cooldown)
+            if player_atk_cd > 0:
+                player_atk_cd -= 1
+            if keys[pg.K_SPACE] and player_atk_cd == 0:
+                # Buscar objetivo más cercano alcanzable
+                target = None; dmin = 1e9
+                for a in eco.animales:
+                    if a is trex or not a.esta_vivo():
+                        continue
+                    d = _dist(trex.x, trex.y, a.x, a.y)
+                    if d < dmin:
+                        dmin = d; target = a
+                if target and dmin < 24:
+                    trex.atacar(target, eco)
+                    _spawn_hit_effect(int(target.x), MARGIN_TOP + int(target.y))
+                    # La creación de cadáver se maneja en Dinosaurio.atacar según la regla de especie distinta
+                    player_atk_cd = 15
+
+        # Simulación lógica a paso fijo
+        sim_accum += dt
+        while sim_accum >= SIM_DT:
+            eco.paso()
+            # IA adicional de movimiento/comportamiento
+            actualizar_ia(eco, trex)
+            # Resolver colisiones para evitar solapes
+            resolver_colisiones(eco)
+            sim_accum -= SIM_DT
+
+        # Actualizar ciclo de vida de cadáveres (desaparecen al consumirse o por edad)
+        _update_corpses()
+
+        # Dibujo
+        screen.fill((235, 245, 235))
+
+        # Plantas
+        for p in eco.plantas:
+            if p.vida <= 0:
+                continue
+            px, py = int(p.x), MARGIN_TOP + int(p.y)
+            key = 'Planta_'+p.estado
+            spr = SPRITES.get(key)
+            if spr is not None:
+                rect = spr.get_rect(center=(px, py))
+                screen.blit(spr, rect)
+            else:
+                if p.estado == 'brote':
+                    color = (90, 200, 90); r = max(3, CELL_SIZE // 3)
+                elif p.estado == 'adulta':
+                    color = (60, 160, 60); r = max(5, CELL_SIZE // 2)
+                else:
+                    color = (150, 120, 80); r = max(2, CELL_SIZE // 4)
+                pg.draw.circle(screen, color, (px, py), r)
+
+        # T-Rex y otros
+        for a in eco.animales:
+            if not a.esta_vivo():
+                continue
+            px = int(a.x); py = MARGIN_TOP + int(a.y)
+            key = type(a).__name__
+            spr = SPRITES.get(key)
+            if spr is not None:
+                rect = spr.get_rect(center=(px, py))
+                screen.blit(spr, rect)
+            else:
+                r = max(6, CELL_SIZE // 2)
+                if isinstance(a, TRexJugador):
+                    pg.draw.circle(screen, (230, 70, 70), (px, py), r)
+                else:
+                    col = (120, 120, 200)
+                    if a.tipo == 'herbivoro': col = (60, 160, 60)
+                    elif a.tipo == 'carnivoro': col = (200, 80, 80)
+                    elif a.tipo == 'omnivoro': col = (200, 170, 90)
+                    pg.draw.circle(screen, col, (px, py), r)
+
+        # HUD
+        plantas = len([p for p in eco.plantas if p.vida > 0])
+        hud_text = f"Plantas:{plantas}  [WASD] mover  [SPACE] atacar  (ESC salir)"
+        hud = font.render(hud_text, True, (20, 20, 20))
+        screen.blit(hud, (8, 8))
+
+        # Efectos y cadáveres
+        _render_corpses(screen)
+        _render_eat_effects(screen)
+        _render_hit_effects(screen)
+        _render_ai_attack_effects(screen)
+
+        pg.display.flip()
+
+    pg.quit()
+
