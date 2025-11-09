@@ -408,3 +408,29 @@ def agregar_planta_dispersada(self, nombre: str = "Helecho", attempts: int = 20,
             self.agregar_planta(Planta(nombre, x, y))
             return True
     return False
+
+def marcar_para_remover(self, a: Dinosaurio):
+    if a not in self._rem_anim:
+        self._rem_anim.append(a)
+
+def marcar_planta_para_remover(self, p: Planta):
+    if p not in self._rem_pla:
+        self._rem_pla.append(p)
+
+def animales_en(self, x, y) -> List[Dinosaurio]:
+    return [a for a in self.animales if a.esta_vivo() and a.x == x and a.y == y]
+
+def plantas_en(self, x, y) -> List[Planta]:
+    return [p for p in self.plantas if p.vida > 0 and p.x == x and p.y == y]
+
+def poblar_inicial(self):
+    objetivo = 40
+    i = 0
+    while len(self.plantas) < objetivo and i < objetivo * 3:
+        i += 1
+        placed = self.agregar_planta_dispersada(f"Helecho_{len(self.plantas)+1}", attempts=60, min_dist=55)
+        if not placed:
+            x = random.randint(0, self.width)
+            y = random.randint(0, self.height)
+            self.agregar_planta(Planta(f"Helecho_{len(self.plantas)+1}", x, y))
+    self.agregar_animal(TRexJugador(self.width // 2, self.height // 2))
