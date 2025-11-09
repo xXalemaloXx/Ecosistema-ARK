@@ -528,3 +528,175 @@ def poblar_inicial(self):
             y = random.randint(0, self.height)
             self.agregar_planta(Planta(f"Helecho_{len(self.plantas)+1}", x, y))
     self.agregar_animal(TRexJugador(self.width // 2, self.height // 2))
+
+# =============================
+# ----- CAPA DE VISTA (PG) ----
+# =============================
+
+CELL_SIZE = 20
+MARGIN_TOP = 40
+WINDOW_W = WORLD_PX_W
+WINDOW_H = MARGIN_TOP + WORLD_PX_H
+
+corpses = []
+hit_effects = []
+eat_effects = []
+ai_attack_effects = []
+SPRITES: dict[str, pg.Surface] = {}
+
+def _safe_load(path: str, size: tuple[int,int] | None = None) -> pg.Surface | None:
+    try:
+        img = pg.image.load(path)
+        img = img.convert_alpha()
+        if size is not None:
+            img = pg.transform.smoothscale(img, size)
+        return img
+    except Exception:
+        return None
+
+def _make_fallback(color: tuple[int,int,int], size: tuple[int,int]) -> pg.Surface:
+    surf = pg.Surface(size, pg.SRCALPHA)
+    pg.draw.rect(surf, color, surf.get_rect(), border_radius=4)
+    return surf
+
+def _load_sprites():
+    base = os.path.join(os.path.dirname(__file__), 'assets')
+    mapping = {
+        'TRexJugador': ('trex.png', (34, 34), (230,70,70)),
+        'Triceratops': ('triceratops.png', (30, 30), (60,160,60)),
+        'Stegosaurio': ('stegosaurio.png', (30, 30), (60,160,60)),
+        'Velociraptor': ('velociraptor.png', (28, 28), (200,80,80)),
+        'Dilofosaurio': ('dilofosaurio.png', (28, 28), (200,80,80)),
+        'Moshops': ('moshops.png', (28, 28), (200,170,90)),
+        'Planta_brote': ('plant_brote.png', (14, 14), (90,200,90)),
+        'Planta_adulta': ('plant_adulta.png', (18, 18), (60,160,60)),
+        'Planta_marchita': ('plant_marchita.png', (12, 12), (150,120,80)),
+        'Cadaver': ('cadaver.png', (26, 18), (120,60,40)),
+    }
+    for key, (fname, size, color) in mapping.items():
+        path = os.path.join(base, fname)
+        img = _safe_load(path, size)
+        if img is None:
+            img = _make_fallback(color, size)
+        SPRITES[key] = img
+
+def _dist(ax, ay, bx, by):
+    dx = bx - ax; dy = by - ay
+    return math.hypot(dx, dy)
+
+def _spawn_hit_effect(x, y, life=10):
+    hit_effects.append({'x': x, 'y': y, 'life': life})
+
+def _render_hit_effects(surface):
+    remove = []
+    for e in hit_effects:
+        r = max(4, 16 - (10 - e['life']))
+        pg.draw.circle(surface, (255,0,0), (int(e['x']), int(e['y'])), r, 2)
+        pg.draw.circle(surface, (255,255,255), (int(e['x']), int(e['y'])), max(2, r//2), 1)
+        e['life'] -= 1
+        if e['life'] <= 0:
+            remove.append(e)
+    for e in remove:
+        hit_effects.remove(e)
+
+def _spawn_eat_effect(x, y, life=12):
+    eat_effects.append({'x': x, 'y': y, 'life': life})
+
+def _render_eat_effects(surface):
+    remove = []
+    for e in eat_effects:
+        phase = (12 - e['life'])
+        r = 6 + (phase % 6)
+        pg.draw.circle(surface, (255,165,0), (int(e['x']), int(e['y'])), r, 2)
+        e['life'] -= 1
+        if e['life'] <= 0:
+            remove.append(e)
+    for e in remove:
+        eat_effects.remove(e)
+
+def _spawn_ai_attack_effect(x, y, life=10, spokes=8):
+    ai_attack_effects.append({'x': x, 'y': y, 'life': life, 'spokes': spokes})
+
+def _render_ai_attack_effects(surface):
+    remove = []
+    for e in ai_attack_effects:
+        phase = (10 - e['life'])
+        max_r = 18
+        r = 6 + int((phase / 10) * max_r)
+        cx, cy = int(e['x']), int(e['y'])
+        for i in range(e['spokes']):
+            ang = (i / e['spokes']) * math.tau
+            x2 = cx + int(r * math.cos(ang))
+            y2 = cy + int(r * math.sin(ang))
+            pg.draw.line(surface, (255,0,0), (cx, cy), (x2, y2), 2)
+        e['life'] -= 1
+        if e['life'] <= 0:
+            remove.append(e)
+    for e in remove:
+        ai_attack_effects.remove(e)
+
+def _update_corpses():
+    remove = []
+    for c in corpses:
+        c['age'] += 1
+        if c['skull_timer'] > 0:
+            c['skull_timer'] -= 1
+        if c['eaten'] >= 1.0 or c['age'] >= c['max_age']:
+            remove.append(c)
+    for c in remove:
+        corpses.remove(c)
+
+def _draw_skull(surface, x, y):
+    pg.draw.circle(surface, (255,255,255), (x, y), 8)
+    pg.draw.circle(surface, (0,0,0), (x-3, y-2), 2)
+    pg.draw.circle(surface, (0,0,0), (x+3, y-2), 2)
+    pg.draw.rect(surface, (255,255,255), pg.Rect(x-5, y+3, 10, 3))
+
+def _render_corpses(surface):
+    for c in corpses:
+        size = max(8, int(20 * (1.0 - 0.3*c['eaten'])))
+        cx, cy = int(c['x']), int(c['y'])
+        spr = SPRITES.get('Cadaver')
+        if spr is not None:
+            rect = spr.get_rect(center=(cx, cy))
+            surface.blit(spr, rect)
+        else:
+            rect = pg.Rect(cx-size, cy-size//2, size*2, int(size))
+            pg.draw.ellipse(surface, (120,60,40), rect)
+        bar_w, bar_h = 24, 4
+        bx = cx - bar_w//2
+        by = cy - size - 8
+        pg.draw.rect(surface, (160,160,160), pg.Rect(bx, by, bar_w, bar_h), border_radius=2)
+        pg.draw.rect(surface, (255,0,0), pg.Rect(bx, by, int(bar_w * c['eaten']), bar_h), border_radius=2)
+        if c['skull_timer'] > 0:
+            _draw_skull(surface, cx, cy - size - 14)
+
+def ai_eat_corpses(animal):
+    if getattr(animal, 'tipo', '') not in ('carnivoro', 'omnivoro'):
+        return False
+    EAT_DURATION_FRAMES = EAT_DURATION_TICKS
+    E_PER_TICK = 40.0 / EAT_DURATION_FRAMES
+    for c in corpses:
+        if c['eaten'] >= 1.0:
+            continue
+        if _dist(animal.x, MARGIN_TOP + animal.y, c['x'], c['y']) < 36:
+            c['eaten'] += 1.0 / EAT_DURATION_FRAMES
+            animal.energia += E_PER_TICK
+            _spawn_eat_effect(c['x'], c['y'])
+            if c['eaten'] >= 1.0:
+                c['eaten'] = 1.0
+                c['age'] = c['max_age']
+            return True
+    return False
+
+def _attempt_attack(attacker: 'Dinosaurio', victim: 'Dinosaurio', eco: 'Ecosistema'):
+    if not hasattr(attacker, '_atk_cd'):
+        attacker._atk_cd = 0
+    if attacker._atk_cd > 0:
+        attacker._atk_cd -= 1
+        return
+    if _dist(attacker.x, attacker.y, victim.x, victim.y) < 26:
+        attacker.atacar(victim, eco)
+        attacker._atk_cd = 30
+        if not isinstance(attacker, TRexJugador) and getattr(attacker, 'tipo', '') == 'carnivoro':
+            _spawn_ai_attack_effect(victim.x, MARGIN_TOP + int(victim.y) - 40)
