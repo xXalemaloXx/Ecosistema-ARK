@@ -408,3 +408,47 @@ def agregar_planta_dispersada(self, nombre: str = "Helecho", attempts: int = 20,
             self.agregar_planta(Planta(nombre, x, y))
             return True
     return False
+
+def limpiar_muertos(self):
+    for a in list(self._rem_anim):
+        if a in self.animales:
+            try:
+                self.animales.remove(a)
+            except ValueError:
+                pass
+        try:
+            self._rem_anim.remove(a)
+        except ValueError:
+            pass
+    for p in list(self._rem_pla):
+        if p in self.plantas:
+            try:
+                self.plantas.remove(p)
+            except ValueError:
+                pass
+        try:
+            self._rem_pla.remove(p)
+        except ValueError:
+            pass
+    self.animales = [a for a in self.animales if a.esta_vivo()]
+    self.plantas = [p for p in self.plantas if p.vida > 0]
+
+def interacciones_en_pos(self, x, y):
+    animales = self.animales_en(x, y)
+    plantas = self.plantas_en(x, y)
+    if plantas and animales:
+        for a in animales:
+            if a.tipo in ("herbivoro", "omnivoro"):
+                obj = random.choice(plantas)
+                a.comer(obj, self)
+                if obj.vida <= 0 and obj in plantas:
+                    try:
+                        plantas.remove(obj)
+                    except ValueError:
+                        pass
+    if len(animales) >= 2:
+        atacante = random.choice(animales)
+        candidatos = [b for b in animales if b is not atacante]
+        if candidatos:
+            victima = random.choice(candidatos)
+            atacante.comer(victima, self)
