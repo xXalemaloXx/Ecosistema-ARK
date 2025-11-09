@@ -847,3 +847,31 @@ def actualizar_ia(eco: 'Ecosistema', jugador: 'TRexJugador'):
                 a.x = max(0, min(WORLD_PX_W, a.x + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
                 a.y = max(0, min(WORLD_PX_H, a.y + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
                 a.energia -= 0.0
+def resolver_colisiones(eco: 'Ecosistema'):
+    """Evita solapes empujando pares de dinosaurios separados por un radio mínimo."""
+    vivos = [a for a in eco.animales if a.esta_vivo()]
+    if len(vivos) < 2:
+        return
+    min_d = 24.0  # diámetro mínimo ~ 2*radio de colisión (12px)
+    for i in range(len(vivos)):
+        a = vivos[i]
+        for j in range(i+1, len(vivos)):
+            b = vivos[j]
+            dx = b.x - a.x
+            dy = b.y - a.y
+            dist = math.hypot(dx, dy)
+            if dist < 1e-6:
+                # separar direcciones aleatorias pequeñas para evitar división por cero
+                ang = random.random() * math.tau
+                dx = math.cos(ang)
+                dy = math.sin(ang)
+                dist = 1.0
+            if dist < min_d:
+                overlap = (min_d - dist) * 0.5
+                nx = dx / dist
+                ny = dy / dist
+                # Empujar ambos en direcciones opuestas
+                a.x = max(0, min(WORLD_PX_W, a.x - nx * overlap))
+                a.y = max(0, min(WORLD_PX_H, a.y - ny * overlap))
+                b.x = max(0, min(WORLD_PX_W, b.x + nx * overlap))
+                b.y = max(0, min(WORLD_PX_H, b.y + ny * overlap))
