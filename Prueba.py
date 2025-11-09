@@ -700,3 +700,150 @@ def _attempt_attack(attacker: 'Dinosaurio', victim: 'Dinosaurio', eco: 'Ecosiste
         attacker._atk_cd = 30
         if not isinstance(attacker, TRexJugador) and getattr(attacker, 'tipo', '') == 'carnivoro':
             _spawn_ai_attack_effect(victim.x, MARGIN_TOP + int(victim.y) - 40)
+            
+def actualizar_ia(eco: 'Ecosistema', jugador: 'TRexJugador'):
+    # Agrupar por especie: centroides para moverse en grupo
+    especie_pos = {}
+    especie_count = {}
+    for a in eco.animales:
+        if not a.esta_vivo() or isinstance(a, TRexJugador):
+            continue
+        key = type(a).__name__
+        especie_pos[key] = (
+            especie_pos.get(key, (0.0, 0.0))[0] + a.x,
+            especie_pos.get(key, (0.0, 0.0))[1] + a.y,
+        )
+        especie_count[key] = especie_count.get(key, 0) + 1
+    centroides = {}
+    for k, (sx, sy) in especie_pos.items():
+        c = especie_count[k]
+        if c > 0:
+            centroides[k] = (sx / c, sy / c)
+
+    # Herbívoros: huyen del T-Rex y comen plantas. Todos: ligera atracción al centro del grupo.
+    for a in list(eco.animales):
+        if a is jugador or not a.esta_vivo():
+            continue
+        t = getattr(a, 'tipo', '')
+        # muerte natural por energía
+        if a.energia <= 0:
+            a.morir()
+            continue
+        # Movimiento de agrupamiento (suave)
+        key = type(a).__name__
+        if key in centroides:
+            cx, cy = centroides[key]
+            dxg, dyg = cx - a.x, cy - a.y
+            dg = math.hypot(dxg, dyg) or 1
+            if dg > 25:  # si está lejos del grupo, acércate un poco
+                a.x = max(0, min(WORLD_PX_W, a.x + 0.6 * dxg/dg))
+                a.y = max(0, min(WORLD_PX_H, a.y + 0.6 * dyg/dg))
+
+        if t == 'herbivoro':
+            # Huir del T-Rex si está cerca
+            if _dist(a.x, a.y, jugador.x, jugador.y) < 120:
+                dx = a.x - jugador.x; dy = a.y - jugador.y
+                d = math.hypot(dx, dy) or 1
+                a.x = max(0, min(WORLD_PX_W, a.x + SPEED_FLEE * dx/d))
+                a.y = max(0, min(WORLD_PX_H, a.y + SPEED_FLEE * dy/d))
+                a.energia -= 0.0
+            else:
+                if a.energia < HUNGER_THRESHOLD:
+                    # Buscar planta más cercana (con hambre)
+                    vivos = [p for p in eco.plantas if p.vida > 0]
+                    if vivos:
+                        obj = min(vivos, key=lambda p: _dist(a.x, a.y, p.x, p.y))
+                        dx = obj.x - a.x; dy = obj.y - a.y
+                        d = math.hypot(dx, dy) or 1
+                        a.x = max(0, min(WORLD_PX_W, a.x + SPEED_SEEK_PLANT * dx/d))
+                        a.y = max(0, min(WORLD_PX_H, a.y + SPEED_SEEK_PLANT * dy/d))
+                        a.energia -= 0.0
+                        if _dist(a.x, a.y, obj.x, obj.y) < 16 y obj.vida > 0:
+                            a.comer(obj, eco)
+                    else:
+                        # vagar si no hay comida
+                        a.x = max(0, min(WORLD_PX_W, a.x + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                        a.y = max(0, min(WORLD_PX_H, a.y + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                        a.energia -= 0.0
+                else:
+                    # Saciado: deambular conservando energía
+                    a.x = max(0, min(WORLD_PX_W, a.x + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                    a.y = max(0, min(WORLD_PX_H, a.y + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                    a.energia -= 0.0
+        elif t == 'carnivoro':
+            # Prioridad absoluta: si hay cadáver (cerca o no), ve hacia él y cómelo si está al alcance
+            # 1) Comer si ya está cerca
+            if ai_eat_corpses(a):
+                continue
+            # 2) Si existe cualquier cadáver no consumido, moverse hacia el más cercano
+            target_corpse = None; best_d = 1e9
+            for c in corpses:
+                if c['eaten'] >= 1.0:
+                    continue
+                d = _dist(a.x, MARGIN_TOP + a.y, c['x'], c['y'])
+                if d < best_d:
+                    best_d = d; target_corpse = c
+            if target_corpse is not None:
+                dx = target_corpse['x'] - a.x
+                dy = target_corpse['y'] - (MARGIN_TOP + a.y)
+                d = math.hypot(dx, dy) or 1
+                a.x = max(0, min(WORLD_PX_W, a.x + SPEED_SEEK_CORPSE * dx/d))
+                a.y = max(0, min(WORLD_PX_H, a.y + SPEED_SEEK_CORPSE * dy/d))
+                # intentar comer en el próximo ciclo si se acerca lo suficiente
+                ai_eat_corpses(a)
+                continue
+            if a.energia <= HUNGER_THRESHOLD:
+                # Con hambre: priorizar cadáver cercano, luego cazar
+                presas = [h for h in eco.animales if getattr(h, 'tipo','') in ('herbivoro','omnivoro') and h.esta_vivo()]
+                if presas:
+                    obj = min(presas, key=lambda h: _dist(a.x, a.y, h.x, h.y))
+                    dx = obj.x - a.x; dy = obj.y - a.y
+                    d = math.hypot(dx, dy) or 1
+                    a.x = max(0, min(WORLD_PX_W, a.x + SPEED_CHASE * dx/d))
+                    a.y = max(0, min(WORLD_PX_H, a.y + SPEED_CHASE * dy/d))
+                    a.energia -= 0.0
+                    if _dist(a.x, a.y, obj.x, obj.y) < 22:
+                        _attempt_attack(a, obj, eco)
+            else:
+                # Saciado: patrullar/deambular suave y comer si pasa por encima de un cadáver
+                a.x = max(0, min(WORLD_PX_W, a.x + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                a.y = max(0, min(WORLD_PX_H, a.y + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                a.energia -= 0.0
+                # Si patrullando encuentra cadáver, comer
+                ai_eat_corpses(a)
+        else:  # omnivoro
+            # Prioridad absoluta: cadáver primero (cerca o no)
+            if ai_eat_corpses(a):
+                continue
+            target_corpse = None; best_d = 1e9
+            for c in corpses:
+                if c['eaten'] >= 1.0:
+                    continue
+                d = _dist(a.x, MARGIN_TOP + a.y, c['x'], c['y'])
+                if d < best_d:
+                    best_d = d; target_corpse = c
+            if target_corpse is not None:
+                dx = target_corpse['x'] - a.x
+                dy = target_corpse['y'] - (MARGIN_TOP + a.y)
+                d = math.hypot(dx, dy) or 1
+                a.x = max(0, min(WORLD_PX_W, a.x + SPEED_SEEK_CORPSE * dx/d))
+                a.y = max(0, min(WORLD_PX_H, a.y + SPEED_SEEK_CORPSE * dy/d))
+                ai_eat_corpses(a)
+                continue
+            if a.energia < HUNGER_THRESHOLD:
+                # Con hambre: buscar plantas
+                vivos = [p for p in eco.plantas if p.vida > 0]
+                if vivos:
+                    obj = min(vivos, key=lambda p: _dist(a.x, a.y, p.x, p.y))
+                    dx = obj.x - a.x; dy = obj.y - a.y
+                    d = math.hypot(dx, dy) or 1
+                    a.x = max(0, min(WORLD_PX_W, a.x + SPEED_SEEK_PLANT * dx/d))
+                    a.y = max(0, min(WORLD_PX_H, a.y + SPEED_SEEK_PLANT * dy/d))
+                    a.energia -= 0.0
+                    if _dist(a.x, a.y, obj.x, obj.y) < 16 y obj.vida > 0:
+                        a.comer(obj, eco)
+            else:
+                # Saciado: patrullar
+                a.x = max(0, min(WORLD_PX_W, a.x + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                a.y = max(0, min(WORLD_PX_H, a.y + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
+                a.energia -= 0.0
