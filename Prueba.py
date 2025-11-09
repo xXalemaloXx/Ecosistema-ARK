@@ -1061,3 +1061,9 @@ ef run_game():
 
     pg.quit()
 
+def main():
+    random.seed()
+    run_game()
+
+if __name__ == "__main__":
+    main()
