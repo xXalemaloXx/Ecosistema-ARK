@@ -90,7 +90,7 @@ class PlantaBase:
 
     def intentar_sembrar(self, ecosistema: 'Ecosistema'):
         """Generar una nueva planta cercana si es adulta y con baja probabilidad."""
-        if self.vida <= 0 o getattr(self, 'estado', 'brote') != 'adulta':
+        if self.vida <= 0 or getattr(self, 'estado', 'brote') != 'adulta':
             return
         # Probabilidad baja de semilla, control de densidad (máximo 60)
         if len(ecosistema.plantas) >= 60:
@@ -162,7 +162,7 @@ class Dinosaurio(Entidad):
         self.energia = 0
 
     def atacar(self, otro: 'Dinosaurio', ecosistema: 'Ecosistema'):
-        if not (self.esta_vivo() y otro.esta_vivo()):
+        if not (self.esta_vivo() and otro.esta_vivo()):
             return
         # Inmunidad del T-Rex jugador
         try:
@@ -368,166 +368,191 @@ class Ecosistema:
                 except Exception:
                     pass
 
-def agregar_animal(self, animal: Dinosaurio):
-    animal.x = max(0, min(self.width, animal.x))
-    animal.y = max(0, min(self.height, animal.y))
-    self.animales.append(animal)
-    if isinstance(animal, TRexJugador):
-        self.jugador = animal
+    def agregar_animal(self, animal: Dinosaurio):
+        animal.x = max(0, min(self.width, animal.x))
+        animal.y = max(0, min(self.height, animal.y))
+        self.animales.append(animal)
+        if isinstance(animal, TRexJugador):
+            self.jugador = animal
 
-def agregar_planta(self, planta: Planta):
-    planta.x = max(0, min(self.width, planta.x))
-    planta.y = max(0, min(self.height, planta.y))
-    self.plantas.append(planta)
+    def agregar_planta(self, planta: Planta):
+        planta.x = max(0, min(self.width, planta.x))
+        planta.y = max(0, min(self.height, planta.y))
+        self.plantas.append(planta)
 
-def _dist_sq(self, x1, y1, x2, y2):
-    dx = x1 - x2
-    dy = y1 - y2
-    return dx*dx + dy*dy
+    # --- Utilidades de distribución ---
+    def _dist_sq(self, x1, y1, x2, y2):
+        dx = x1 - x2
+        dy = y1 - y2
+        return dx*dx + dy*dy
 
-def agregar_planta_dispersada(self, nombre: str = "Helecho", attempts: int = 20, min_dist: int = 50,
-                               around: tuple | None = None, radius: int = 150):
-    """Intentar ubicar una planta manteniendo una distancia mínima a las existentes."""
-    min_dist_sq = max(0, min_dist) ** 2
-    for _ in range(max(1, attempts)):
-        if around is None:
-            x = random.randint(0, self.width)
-            y = random.randint(0, self.height)
-        else:
-            ax, ay = around
-            ang = random.random() * 6.2831853
-            r = random.randint(0, max(10, radius))
-            x = int(max(0, min(self.width, ax + r * (random.random()*2-1))))
-            y = int(max(0, min(self.height, ay + r * (random.random()*2-1))))
-        ok = True
-        for p in self.plantas:
-            if p.vida > 0 and self._dist_sq(x, y, p.x, p.y) < min_dist_sq:
-                ok = False
-                break
-        if ok:
-            self.agregar_planta(Planta(nombre, x, y))
-            return True
-    return False
+    def agregar_planta_dispersada(self, nombre: str = "Helecho", attempts: int = 20, min_dist: int = 50,
+                                   around: tuple | None = None, radius: int = 150):
+        """Intentar ubicar una planta manteniendo una distancia mínima a las existentes.
+        - around=(x,y): si se pasa, intenta colocar alrededor de ese punto dentro de 'radius'.
+        - si no, distribuye global en el mapa.
+        """
+        min_dist_sq = max(0, min_dist) ** 2
+        for _ in range(max(1, attempts)):
+            if around is None:
+                x = random.randint(0, self.width)
+                y = random.randint(0, self.height)
+            else:
+                ax, ay = around
+                ang = random.random() * 6.2831853
+                r = random.randint(0, max(10, radius))
+                x = int(max(0, min(self.width, ax + r * (random.random()*2-1))))
+                y = int(max(0, min(self.height, ay + r * (random.random()*2-1))))
+            ok = True
+            for p in self.plantas:
+                if p.vida > 0 and self._dist_sq(x, y, p.x, p.y) < min_dist_sq:
+                    ok = False
+                    break
+            if ok:
+                self.agregar_planta(Planta(nombre, x, y))
+                return True
+        return False
 
-def limpiar_muertos(self):
-    for a in list(self._rem_anim):
-        if a in self.animales:
+    def marcar_para_remover(self, a: Dinosaurio):
+        if a not in self._rem_anim:
+            self._rem_anim.append(a)
+
+    def marcar_planta_para_remover(self, p: Planta):
+        if p not in self._rem_pla:
+            self._rem_pla.append(p)
+
+    def animales_en(self, x, y) -> List[Dinosaurio]:
+        return [a for a in self.animales if a.esta_vivo() and a.x == x and a.y == y]
+
+    def plantas_en(self, x, y) -> List[Planta]:
+        return [p for p in self.plantas if p.vida > 0 and p.x == x and p.y == y]
+
+    def poblar_inicial(self):
+        # Plantas de fondo (distribución dispersa) mínimo 40
+        objetivo = 40
+        i = 0
+        while len(self.plantas) < objetivo and i < objetivo * 3:
+            i += 1
+            placed = self.agregar_planta_dispersada(f"Helecho_{len(self.plantas)+1}", attempts=60, min_dist=55)
+            if not placed:
+                # Fallback aleatorio si no encuentra hueco
+                x = random.randint(0, self.width)
+                y = random.randint(0, self.height)
+                self.agregar_planta(Planta(f"Helecho_{len(self.plantas)+1}", x, y))
+        # Solo jugador (T-Rex)
+        self.agregar_animal(TRexJugador(self.width // 2, self.height // 2))
+
+    def limpiar_muertos(self):
+        for a in list(self._rem_anim):
+            if a in self.animales:
+                try:
+                    self.animales.remove(a)
+                except ValueError:
+                    pass
             try:
-                self.animales.remove(a)
+                self._rem_anim.remove(a)
             except ValueError:
                 pass
-        try:
-            self._rem_anim.remove(a)
-        except ValueError:
-            pass
-    for p in list(self._rem_pla):
-        if p in self.plantas:
+        for p in list(self._rem_pla):
+            if p in self.plantas:
+                try:
+                    self.plantas.remove(p)
+                except ValueError:
+                    pass
             try:
-                self.plantas.remove(p)
+                self._rem_pla.remove(p)
             except ValueError:
                 pass
-        try:
-            self._rem_pla.remove(p)
-        except ValueError:
+        # hard clean
+        self.animales = [a for a in self.animales if a.esta_vivo()]
+        self.plantas = [p for p in self.plantas if p.vida > 0]
+
+    def interacciones_en_pos(self, x, y):
+        animales = self.animales_en(x, y)
+        plantas = self.plantas_en(x, y)
+        # comer plantas
+        if plantas and animales:
+            for a in animales:
+                if a.tipo in ("herbivoro", "omnivoro"):
+                    obj = random.choice(plantas)
+                    a.comer(obj, self)
+                    if obj.vida <= 0 and obj in plantas:
+                        try:
+                            plantas.remove(obj)
+                        except ValueError:
+                            pass
+        # peleas
+        if len(animales) >= 2:
+            atacante = random.choice(animales)
+            candidatos = [b for b in animales if b is not atacante]
+            if candidatos:
+                victima = random.choice(candidatos)
+                atacante.comer(victima, self)  # para delegar a atacar si procede
+
+    def paso(self):
+        # IA
+        for a in list(self.animales):
+            if not a.esta_vivo():
+                self.marcar_para_remover(a)
+                continue
+            if not isinstance(a, TRexJugador):
+                a.tick_ia(self)
+            a.envejecer()
+        # Ciclo de vida de plantas: envejecer y posibles semillas
+        for p in list(self.plantas):
+            if p.vida > 0:
+                p.envejecer()
+                p.intentar_sembrar(self)
+        # interacciones por posición
+        # Posiciones discretas ya no se usan para colisiones (movimiento libre),
+        # se omiten interacciones por celda.
+        posiciones = set()
+        for (x, y) in posiciones:
             pass
-    self.animales = [a for a in self.animales if a.esta_vivo()]
-    self.plantas = [p for p in self.plantas if p.vida > 0]
-
-def interacciones_en_pos(self, x, y):
-    animales = self.animales_en(x, y)
-    plantas = self.plantas_en(x, y)
-    if plantas and animales:
-        for a in animales:
-            if a.tipo in ("herbivoro", "omnivoro"):
-                obj = random.choice(plantas)
-                a.comer(obj, self)
-                if obj.vida <= 0 and obj in plantas:
-                    try:
-                        plantas.remove(obj)
-                    except ValueError:
-                        pass
-    if len(animales) >= 2:
-        atacante = random.choice(animales)
-        candidatos = [b for b in animales if b is not atacante]
-        if candidatos:
-            victima = random.choice(candidatos)
-            atacante.comer(victima, self)
-
-def paso(self):
-    for a in list(self.animales):
-        if not a.esta_vivo():
-            self.marcar_para_remover(a)
-            continue
-        if not isinstance(a, TRexJugador):
-            a.tick_ia(self)
-        a.envejecer()
-    for p in list(self.plantas):
-        if p.vida > 0:
-            p.envejecer()
-            p.intentar_sembrar(self)
-    posiciones = set()
-    for (x, y) in posiciones:
-        pass
-    for a in list(self.animales):
-        if a.esta_vivo():
-            a.reproducirse(self)
-    self.asegurar_minimos_especie(minimo=2)
-    vivos = [a for a in self.animales if a.esta_vivo() and not isinstance(a, TRexJugador)]
-    excede = max(0, len([a for a in self.animales if a.esta_vivo()]) - self.max_animales)
-    if excede > 0:
-        vivos.sort(key=lambda a: (a.energia, -a.edad))
-        for i in range(excede):
-            if i < len(vivos):
-                self.marcar_para_remover(vivos[i])
+        # reproducción
+        for a in list(self.animales):
+            if a.esta_vivo():
+                a.reproducirse(self)
+        # Asegurar mínimos por especie (p. ej. 2)
+        self.asegurar_minimos_especie(minimo=2)
+        # Recorte si excede el máximo global (no tocar T-Rex)
+        vivos = [a for a in self.animales if a.esta_vivo() and not isinstance(a, TRexJugador)]
+        excede = max(0, len([a for a in self.animales if a.esta_vivo()]) - self.max_animales)
+        if excede > 0:
+            # Ordenar por menor energía y mayor edad para recortar primero los más débiles
+            vivos.sort(key=lambda a: (a.energia, -a.edad))
+            for i in range(excede):
+                if i < len(vivos):
+                    self.marcar_para_remover(vivos[i])
+            self.limpiar_muertos()
+        # limpieza
         self.limpiar_muertos()
-    self.limpiar_muertos()
-    min_obj = 40
-    max_obj = 60
-    refill_attempts = 0
-    while len(self.plantas) < min_obj and refill_attempts < min_obj * 4:
-        refill_attempts += 1
-        placed = self.agregar_planta_dispersada("Helecho", attempts=60, min_dist=55)
-        if not placed:
-            self.agregar_planta(Planta("Helecho", random.randint(0, self.width), random.randint(0, self.height)))
-    if len(self.plantas) > max_obj:
-        vivas = [p for p in self.plantas if p.vida > 0]
-        vivas.sort(key=lambda p: (0 if p.estado == 'marchita' else 1, -p.edad))
-        excedente = len(self.plantas) - max_obj
-        to_remove = []
-        for p in vivas:
-            if excedente <= 0:
-                break
-            to_remove.append(p)
-            excedente -= 1
-        for p in to_remove:
-            self.marcar_planta_para_remover(p)
-        self.limpiar_muertos()
-
-def marcar_para_remover(self, a: Dinosaurio):
-    if a not in self._rem_anim:
-        self._rem_anim.append(a)
-
-def marcar_planta_para_remover(self, p: Planta):
-    if p not in self._rem_pla:
-        self._rem_pla.append(p)
-
-def animales_en(self, x, y) -> List[Dinosaurio]:
-    return [a for a in self.animales if a.esta_vivo() and a.x == x and a.y == y]
-
-def plantas_en(self, x, y) -> List[Planta]:
-    return [p for p in self.plantas if p.vida > 0 and p.x == x and p.y == y]
-
-def poblar_inicial(self):
-    objetivo = 40
-    i = 0
-    while len(self.plantas) < objetivo and i < objetivo * 3:
-        i += 1
-        placed = self.agregar_planta_dispersada(f"Helecho_{len(self.plantas)+1}", attempts=60, min_dist=55)
-        if not placed:
-            x = random.randint(0, self.width)
-            y = random.randint(0, self.height)
-            self.agregar_planta(Planta(f"Helecho_{len(self.plantas)+1}", x, y))
-    self.agregar_animal(TRexJugador(self.width // 2, self.height // 2))
+        # Mantener entre 40 y 60 plantas: rellenar y limitar
+        min_obj = 40
+        max_obj = 60
+        # Top-up a mínimo
+        refill_attempts = 0
+        while len(self.plantas) < min_obj and refill_attempts < min_obj * 4:
+            refill_attempts += 1
+            placed = self.agregar_planta_dispersada("Helecho", attempts=60, min_dist=55)
+            if not placed:
+                # Fallback si no encuentra hueco tras varios intentos
+                self.agregar_planta(Planta("Helecho", random.randint(0, self.width), random.randint(0, self.height)))
+        # Si excede el máximo, remover las más viejas/marchitas primero
+        if len(self.plantas) > max_obj:
+            # Ordenar por prioridad de remoción: marchitas primero, luego mayor edad
+            vivas = [p for p in self.plantas if p.vida > 0]
+            vivas.sort(key=lambda p: (0 if p.estado == 'marchita' else 1, -p.edad))
+            excedente = len(self.plantas) - max_obj
+            to_remove = []
+            for p in vivas:
+                if excedente <= 0:
+                    break
+                to_remove.append(p)
+                excedente -= 1
+            for p in to_remove:
+                self.marcar_planta_para_remover(p)
+            self.limpiar_muertos()
 
 # =============================
 # ----- CAPA DE VISTA (PG) ----
@@ -538,10 +563,13 @@ MARGIN_TOP = 40
 WINDOW_W = WORLD_PX_W
 WINDOW_H = MARGIN_TOP + WORLD_PX_H
 
-corpses = []
-hit_effects = []
-eat_effects = []
-ai_attack_effects = []
+# --- Sistemas de efectos y cadáveres ---
+corpses = []  # {'x','y','age','max_age','eaten','skull_timer'}
+hit_effects = []  # golpes del jugador
+eat_effects = []  # efectos al comer
+ai_attack_effects = []  # efectos de ataque IA
+
+# --- Sprites ---
 SPRITES: dict[str, pg.Surface] = {}
 
 def _safe_load(path: str, size: tuple[int,int] | None = None) -> pg.Surface | None:
@@ -635,6 +663,8 @@ def _render_ai_attack_effects(surface):
     for e in remove:
         ai_attack_effects.remove(e)
 
+ 
+
 def _update_corpses():
     remove = []
     for c in corpses:
@@ -700,7 +730,7 @@ def _attempt_attack(attacker: 'Dinosaurio', victim: 'Dinosaurio', eco: 'Ecosiste
         attacker._atk_cd = 30
         if not isinstance(attacker, TRexJugador) and getattr(attacker, 'tipo', '') == 'carnivoro':
             _spawn_ai_attack_effect(victim.x, MARGIN_TOP + int(victim.y) - 40)
-            
+
 def actualizar_ia(eco: 'Ecosistema', jugador: 'TRexJugador'):
     # Agrupar por especie: centroides para moverse en grupo
     especie_pos = {}
@@ -758,7 +788,7 @@ def actualizar_ia(eco: 'Ecosistema', jugador: 'TRexJugador'):
                         a.x = max(0, min(WORLD_PX_W, a.x + SPEED_SEEK_PLANT * dx/d))
                         a.y = max(0, min(WORLD_PX_H, a.y + SPEED_SEEK_PLANT * dy/d))
                         a.energia -= 0.0
-                        if _dist(a.x, a.y, obj.x, obj.y) < 16 y obj.vida > 0:
+                        if _dist(a.x, a.y, obj.x, obj.y) < 16 and obj.vida > 0:
                             a.comer(obj, eco)
                     else:
                         # vagar si no hay comida
@@ -840,13 +870,15 @@ def actualizar_ia(eco: 'Ecosistema', jugador: 'TRexJugador'):
                     a.x = max(0, min(WORLD_PX_W, a.x + SPEED_SEEK_PLANT * dx/d))
                     a.y = max(0, min(WORLD_PX_H, a.y + SPEED_SEEK_PLANT * dy/d))
                     a.energia -= 0.0
-                    if _dist(a.x, a.y, obj.x, obj.y) < 16 y obj.vida > 0:
+                    if _dist(a.x, a.y, obj.x, obj.y) < 16 and obj.vida > 0:
                         a.comer(obj, eco)
             else:
                 # Saciado: patrullar
                 a.x = max(0, min(WORLD_PX_W, a.x + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
                 a.y = max(0, min(WORLD_PX_H, a.y + random.uniform(-SPEED_PATROL, SPEED_PATROL)))
                 a.energia -= 0.0
+
+
 def resolver_colisiones(eco: 'Ecosistema'):
     """Evita solapes empujando pares de dinosaurios separados por un radio mínimo."""
     vivos = [a for a in eco.animales if a.esta_vivo()]
@@ -875,7 +907,8 @@ def resolver_colisiones(eco: 'Ecosistema'):
                 a.y = max(0, min(WORLD_PX_H, a.y - ny * overlap))
                 b.x = max(0, min(WORLD_PX_W, b.x + nx * overlap))
                 b.y = max(0, min(WORLD_PX_H, b.y + ny * overlap))
-ef run_game():
+
+def run_game():
     pg.init()
     screen = pg.display.set_mode((WINDOW_W, WINDOW_H))
     pg.display.set_caption("Jurassic MVC - T-Rex Jugador (Pygame)")
@@ -933,7 +966,7 @@ ef run_game():
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 running = False
-            elif event.type == pg.KEYDOWN y event.key == pg.K_ESCAPE:
+            elif event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
                 running = False
 
         # Entrada (WASD + flechas, movimiento diagonal normalizado)
@@ -1060,6 +1093,7 @@ ef run_game():
         pg.display.flip()
 
     pg.quit()
+
 
 def main():
     random.seed()
