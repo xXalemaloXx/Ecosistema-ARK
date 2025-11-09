@@ -453,6 +453,56 @@ def interacciones_en_pos(self, x, y):
             victima = random.choice(candidatos)
             atacante.comer(victima, self)
 
+def paso(self):
+    for a in list(self.animales):
+        if not a.esta_vivo():
+            self.marcar_para_remover(a)
+            continue
+        if not isinstance(a, TRexJugador):
+            a.tick_ia(self)
+        a.envejecer()
+    for p in list(self.plantas):
+        if p.vida > 0:
+            p.envejecer()
+            p.intentar_sembrar(self)
+    posiciones = set()
+    for (x, y) in posiciones:
+        pass
+    for a in list(self.animales):
+        if a.esta_vivo():
+            a.reproducirse(self)
+    self.asegurar_minimos_especie(minimo=2)
+    vivos = [a for a in self.animales if a.esta_vivo() and not isinstance(a, TRexJugador)]
+    excede = max(0, len([a for a in self.animales if a.esta_vivo()]) - self.max_animales)
+    if excede > 0:
+        vivos.sort(key=lambda a: (a.energia, -a.edad))
+        for i in range(excede):
+            if i < len(vivos):
+                self.marcar_para_remover(vivos[i])
+        self.limpiar_muertos()
+    self.limpiar_muertos()
+    min_obj = 40
+    max_obj = 60
+    refill_attempts = 0
+    while len(self.plantas) < min_obj and refill_attempts < min_obj * 4:
+        refill_attempts += 1
+        placed = self.agregar_planta_dispersada("Helecho", attempts=60, min_dist=55)
+        if not placed:
+            self.agregar_planta(Planta("Helecho", random.randint(0, self.width), random.randint(0, self.height)))
+    if len(self.plantas) > max_obj:
+        vivas = [p for p in self.plantas if p.vida > 0]
+        vivas.sort(key=lambda p: (0 if p.estado == 'marchita' else 1, -p.edad))
+        excedente = len(self.plantas) - max_obj
+        to_remove = []
+        for p in vivas:
+            if excedente <= 0:
+                break
+            to_remove.append(p)
+            excedente -= 1
+        for p in to_remove:
+            self.marcar_planta_para_remover(p)
+        self.limpiar_muertos()
+
 def marcar_para_remover(self, a: Dinosaurio):
     if a not in self._rem_anim:
         self._rem_anim.append(a)
