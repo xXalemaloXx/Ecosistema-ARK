@@ -367,3 +367,44 @@ class Ecosistema:
                     self.agregar_animal(clase(nx, ny))
                 except Exception:
                     pass
+
+def agregar_animal(self, animal: Dinosaurio):
+    animal.x = max(0, min(self.width, animal.x))
+    animal.y = max(0, min(self.height, animal.y))
+    self.animales.append(animal)
+    if isinstance(animal, TRexJugador):
+        self.jugador = animal
+
+def agregar_planta(self, planta: Planta):
+    planta.x = max(0, min(self.width, planta.x))
+    planta.y = max(0, min(self.height, planta.y))
+    self.plantas.append(planta)
+
+def _dist_sq(self, x1, y1, x2, y2):
+    dx = x1 - x2
+    dy = y1 - y2
+    return dx*dx + dy*dy
+
+def agregar_planta_dispersada(self, nombre: str = "Helecho", attempts: int = 20, min_dist: int = 50,
+                               around: tuple | None = None, radius: int = 150):
+    """Intentar ubicar una planta manteniendo una distancia mínima a las existentes."""
+    min_dist_sq = max(0, min_dist) ** 2
+    for _ in range(max(1, attempts)):
+        if around is None:
+            x = random.randint(0, self.width)
+            y = random.randint(0, self.height)
+        else:
+            ax, ay = around
+            ang = random.random() * 6.2831853
+            r = random.randint(0, max(10, radius))
+            x = int(max(0, min(self.width, ax + r * (random.random()*2-1))))
+            y = int(max(0, min(self.height, ay + r * (random.random()*2-1))))
+        ok = True
+        for p in self.plantas:
+            if p.vida > 0 and self._dist_sq(x, y, p.x, p.y) < min_dist_sq:
+                ok = False
+                break
+        if ok:
+            self.agregar_planta(Planta(nombre, x, y))
+            return True
+    return False
